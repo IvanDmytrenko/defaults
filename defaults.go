@@ -16,6 +16,32 @@ const (
 	fieldName = "default"
 )
 
+// ReSet initializes members in a struct referenced by a pointer in strict mode.
+// Maps and slices are initialized by `make` and other primitive types are set with default values.
+// `ptr` should be a struct pointer
+func ReSet(ptr interface{}) error {
+	if reflect.TypeOf(ptr).Kind() != reflect.Ptr {
+		return errInvalidType
+	}
+
+	v := reflect.ValueOf(ptr).Elem()
+	t := v.Type()
+
+	if t.Kind() != reflect.Struct {
+		return errInvalidType
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		if defaultVal := t.Field(i).Tag.Get(fieldName); defaultVal != "-" {
+			if err := setField(v.Field(i), defaultVal, true); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // Set initializes members in a struct referenced by a pointer.
 // Maps and slices are initialized by `make` and other primitive types are set with default values.
 // `ptr` should be a struct pointer
@@ -33,7 +59,7 @@ func Set(ptr interface{}) error {
 
 	for i := 0; i < t.NumField(); i++ {
 		if defaultVal := t.Field(i).Tag.Get(fieldName); defaultVal != "-" {
-			if err := setField(v.Field(i), defaultVal); err != nil {
+			if err := setField(v.Field(i), defaultVal, false); err != nil {
 				return err
 			}
 		}
@@ -42,7 +68,7 @@ func Set(ptr interface{}) error {
 	return nil
 }
 
-func setField(field reflect.Value, defaultVal string) error {
+func setField(field reflect.Value, defaultVal string, strict bool) error {
 	if !field.CanSet() {
 		return nil
 	}
@@ -51,7 +77,7 @@ func setField(field reflect.Value, defaultVal string) error {
 		return nil
 	}
 
-	if isInitialValue(field) {
+	if strict || isInitialValue(field) {
 		switch field.Kind() {
 		case reflect.Bool:
 			if val, err := strconv.ParseBool(defaultVal); err == nil {
@@ -147,7 +173,7 @@ func setField(field reflect.Value, defaultVal string) error {
 
 	switch field.Kind() {
 	case reflect.Ptr:
-		setField(field.Elem(), defaultVal)
+		setField(field.Elem(), defaultVal, strict)
 		callSetter(field.Interface())
 	case reflect.Struct:
 		ref := reflect.New(field.Type())
@@ -159,7 +185,7 @@ func setField(field reflect.Value, defaultVal string) error {
 		field.Set(ref.Elem())
 	case reflect.Slice:
 		for j := 0; j < field.Len(); j++ {
-			if err := setField(field.Index(j), defaultVal); err != nil {
+			if err := setField(field.Index(j), defaultVal, strict); err != nil {
 				return err
 			}
 		}
